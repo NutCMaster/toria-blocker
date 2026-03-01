@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Polytoria Friend Request Blocker",
+  "version": "1.0.0",
+  "description": "Automatically declines friend requests from selected users on polytoria.com.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://www.polytoria.com/*", "https://polytoria.com/*"],
+  "action": {
+    "default_title": "Polytoria Blocker",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.polytoria.com/*", "https://polytoria.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

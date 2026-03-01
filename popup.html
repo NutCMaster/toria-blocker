@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Polytoria Blocker</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="app">
+      <h1>Polytoria Blocker</h1>
+      <p class="hint">Any matching incoming friend request will be declined automatically (username or user ID).</p>
+
+      <form id="add-form" autocomplete="off">
+        <label for="username">Add blocked username or user ID</label>
+        <div class="row">
+          <input id="username" name="username" type="text" placeholder="ExampleUser or 463353" required />
+          <button type="submit">Add</button>
+        </div>
+      </form>
+
+      <section>
+        <h2>Blocked users</h2>
+        <ul id="blocked-list" class="blocked-list"></ul>
+        <p id="empty-state" class="empty">No users blocked yet.</p>
+      </section>
+
+      <p id="status" class="status" aria-live="polite"></p>
+    </main>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
