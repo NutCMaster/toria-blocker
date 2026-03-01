@@ -14,6 +14,38 @@
     return window.location.pathname.startsWith(FRIENDS_PATH);
   }
 
+  function storageGet(area, keys) {
+    return new Promise((resolve) => {
+      area.get(keys, (result) => {
+        if (chrome.runtime.lastError) {
+          resolve({});
+          return;
+        }
+        resolve(result || {});
+      });
+    });
+  }
+
+  function toNormalizedSet(values) {
+    return new Set((values || []).map(normalize).filter(Boolean));
+  }
+
+  async function loadBlockedEntries() {
+    const [syncData, localData] = await Promise.all([
+      storageGet(chrome.storage.sync, [STORAGE_KEY, LEGACY_STORAGE_KEY]),
+      storageGet(chrome.storage.local, [STORAGE_KEY, LEGACY_STORAGE_KEY])
+    ]);
+
+    const merged = [
+      ...(Array.isArray(syncData[STORAGE_KEY]) ? syncData[STORAGE_KEY] : []),
+      ...(Array.isArray(syncData[LEGACY_STORAGE_KEY]) ? syncData[LEGACY_STORAGE_KEY] : []),
+      ...(Array.isArray(localData[STORAGE_KEY]) ? localData[STORAGE_KEY] : []),
+      ...(Array.isArray(localData[LEGACY_STORAGE_KEY]) ? localData[LEGACY_STORAGE_KEY] : [])
+    ];
+
+    blockedEntries = toNormalizedSet(merged);
+  }
+
   function getRequestCards() {
     return Array.from(document.querySelectorAll("#friends-container .card .card-body"));
   }
@@ -65,10 +97,8 @@
   function triggerDecline(declineButton) {
     declineButton.dataset.polyBlockerDone = "1";
 
-    // Primary path for inline onclick handlers.
     declineButton.click();
 
-    // Fallback in case the site binds listeners differently.
     declineButton.dispatchEvent(
       new MouseEvent("click", {
         bubbles: true,
@@ -113,19 +143,8 @@
     scanTimer = setTimeout(scanAndDecline, 80);
   }
 
-  function loadBlockedEntries(callback) {
-    chrome.storage.sync.get([STORAGE_KEY, LEGACY_STORAGE_KEY], (result) => {
-      const currentEntries = Array.isArray(result[STORAGE_KEY]) ? result[STORAGE_KEY] : [];
-      const legacyEntries = Array.isArray(result[LEGACY_STORAGE_KEY]) ? result[LEGACY_STORAGE_KEY] : [];
-      blockedEntries = new Set([...currentEntries, ...legacyEntries].map(normalize).filter(Boolean));
-      callback();
-    });
-  }
-
-  loadBlockedEntries(scanAndDecline);
-
   chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== "sync") {
+    if (areaName !== "sync" && areaName !== "local") {
       return;
     }
 
@@ -134,11 +153,9 @@
     }
 
     const nextEntries = Array.isArray(changes[STORAGE_KEY]?.newValue) ? changes[STORAGE_KEY].newValue : [];
-    const nextLegacy = Array.isArray(changes[LEGACY_STORAGE_KEY]?.newValue)
-      ? changes[LEGACY_STORAGE_KEY].newValue
-      : [];
+    const nextLegacy = Array.isArray(changes[LEGACY_STORAGE_KEY]?.newValue) ? changes[LEGACY_STORAGE_KEY].newValue : [];
 
-    blockedEntries = new Set([...nextEntries, ...nextLegacy].map(normalize).filter(Boolean));
+    blockedEntries = toNormalizedSet([...nextEntries, ...nextLegacy]);
     scheduleScan();
   });
 
@@ -148,12 +165,11 @@
     subtree: true
   });
 
-  // Requests are loaded asynchronously via axios in page scripts.
   const intervalId = setInterval(scanAndDecline, 1000);
 
   window.addEventListener("beforeunload", () => {
     clearInterval(intervalId);
   });
 
-  scheduleScan();
+  loadBlockedEntries().then(scheduleScan);
 })();
