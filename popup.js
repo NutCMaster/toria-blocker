@@ -1,4 +1,5 @@
 const STORAGE_KEY = "blockedEntries";
+const LEGACY_KEY = "blockedUsers";
 
 const addForm = document.getElementById("add-form");
 const usernameInput = document.getElementById("username");
@@ -17,10 +18,77 @@ function showStatus(text, isError = false) {
   statusEl.style.color = isError ? "#fca5a5" : "#34d399";
 }
 
-function saveEntries() {
-  chrome.storage.sync.set({ [STORAGE_KEY]: blockedEntries }, () => {
-    showStatus("Saved.");
+function dedupeNormalize(values) {
+  return [...new Set(values.map(normalizeEntry).filter(Boolean))].sort();
+}
+
+function storageGet(area, keys) {
+  return new Promise((resolve) => {
+    area.get(keys, (result) => {
+      if (chrome.runtime.lastError) {
+        resolve({});
+        return;
+      }
+      resolve(result || {});
+    });
   });
+}
+
+function storageSet(area, data) {
+  return new Promise((resolve) => {
+    area.set(data, () => {
+      resolve(!chrome.runtime.lastError);
+    });
+  });
+}
+
+function storageRemove(area, key) {
+  return new Promise((resolve) => {
+    area.remove(key, () => {
+      resolve(!chrome.runtime.lastError);
+    });
+  });
+}
+
+async function loadEntries() {
+  const [syncData, localData] = await Promise.all([
+    storageGet(chrome.storage.sync, [STORAGE_KEY, LEGACY_KEY]),
+    storageGet(chrome.storage.local, [STORAGE_KEY, LEGACY_KEY])
+  ]);
+
+  const merged = [
+    ...(Array.isArray(syncData[STORAGE_KEY]) ? syncData[STORAGE_KEY] : []),
+    ...(Array.isArray(syncData[LEGACY_KEY]) ? syncData[LEGACY_KEY] : []),
+    ...(Array.isArray(localData[STORAGE_KEY]) ? localData[STORAGE_KEY] : []),
+    ...(Array.isArray(localData[LEGACY_KEY]) ? localData[LEGACY_KEY] : [])
+  ];
+
+  blockedEntries = dedupeNormalize(merged);
+  renderEntries();
+
+  await Promise.all([
+    storageSet(chrome.storage.sync, { [STORAGE_KEY]: blockedEntries }),
+    storageSet(chrome.storage.local, { [STORAGE_KEY]: blockedEntries }),
+    storageRemove(chrome.storage.sync, LEGACY_KEY),
+    storageRemove(chrome.storage.local, LEGACY_KEY)
+  ]);
+}
+
+async function saveEntries() {
+  const entries = dedupeNormalize(blockedEntries);
+  blockedEntries = entries;
+
+  const [syncSaved, localSaved] = await Promise.all([
+    storageSet(chrome.storage.sync, { [STORAGE_KEY]: entries }),
+    storageSet(chrome.storage.local, { [STORAGE_KEY]: entries })
+  ]);
+
+  if (syncSaved || localSaved) {
+    showStatus(syncSaved ? "Saved (sync + offline cache)." : "Saved (offline cache only).");
+    return;
+  }
+
+  showStatus("Failed to save blocked entries.", true);
 }
 
 function renderEntries() {
@@ -38,10 +106,10 @@ function renderEntries() {
     removeBtn.textContent = "Remove";
     removeBtn.className = "remove";
     removeBtn.type = "button";
-    removeBtn.addEventListener("click", () => {
+    removeBtn.addEventListener("click", async () => {
       blockedEntries = blockedEntries.filter((v) => v !== entry);
-      saveEntries();
       renderEntries();
+      await saveEntries();
     });
 
     li.append(label, removeBtn);
@@ -49,7 +117,7 @@ function renderEntries() {
   });
 }
 
-addForm.addEventListener("submit", (event) => {
+addForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const normalized = normalizeEntry(usernameInput.value);
 
@@ -64,28 +132,12 @@ addForm.addEventListener("submit", (event) => {
   }
 
   blockedEntries.push(normalized);
-  blockedEntries.sort();
-
-  saveEntries();
+  blockedEntries = dedupeNormalize(blockedEntries);
   renderEntries();
+  await saveEntries();
 
   usernameInput.value = "";
   usernameInput.focus();
 });
 
-chrome.storage.sync.get([STORAGE_KEY, "blockedUsers"], (result) => {
-  const fromNewKey = Array.isArray(result[STORAGE_KEY]) ? result[STORAGE_KEY] : [];
-  const fromLegacyKey = Array.isArray(result.blockedUsers) ? result.blockedUsers : [];
-
-  blockedEntries = [...fromNewKey, ...fromLegacyKey]
-    .map(normalizeEntry)
-    .filter(Boolean);
-
-  blockedEntries = [...new Set(blockedEntries)].sort();
-  renderEntries();
-
-  if (fromLegacyKey.length) {
-    chrome.storage.sync.remove("blockedUsers");
-    saveEntries();
-  }
-});
+loadEntries();
