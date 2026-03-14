@@ -143,6 +143,11 @@
     scanTimer = setTimeout(scanAndDecline, 80);
   }
 
+  async function refreshBlockedEntriesFromStorage() {
+    await loadBlockedEntries();
+    scheduleScan();
+  }
+
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== "sync" && areaName !== "local") {
       return;
@@ -152,11 +157,7 @@
       return;
     }
 
-    const nextEntries = Array.isArray(changes[STORAGE_KEY]?.newValue) ? changes[STORAGE_KEY].newValue : [];
-    const nextLegacy = Array.isArray(changes[LEGACY_STORAGE_KEY]?.newValue) ? changes[LEGACY_STORAGE_KEY].newValue : [];
-
-    blockedEntries = toNormalizedSet([...nextEntries, ...nextLegacy]);
-    scheduleScan();
+    refreshBlockedEntriesFromStorage();
   });
 
   const observer = new MutationObserver(scheduleScan);
@@ -171,5 +172,5 @@
     clearInterval(intervalId);
   });
 
-  loadBlockedEntries().then(scheduleScan);
+  refreshBlockedEntriesFromStorage();
 })();
